@@ -1,0 +1,13 @@
+product_name,retailer,regular_price,membership_price,unit_price,currency,store_id,postal_code,location,price_source,price_scope,captured_at
+"Tunnocks Milk Chocolate Caramel Wafer Biscuits Multipack, 240g",Tesco,2.25,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Tunnocks Milk Chocolate Caramel Wafer Biscuits Multipack, 240g",Aldi,1.69,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Tunnocks Milk Chocolate Caramel Wafer Biscuits Multipack, 240g",Morrisons,2.10,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Ferrero Raffaello Coconut & Almond Pralines 230G",Tesco,6.55,5.25,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Ferrero Raffaello Coconut & Almond Pralines 230G",Morrisons,6.50,5.25,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Ferrero Raffaello Coconut & Almond Pralines 230G",Lidl,4.99,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Nestlé Cheerios Honey Cereal 575g",Tesco,3.90,3.00,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Nestlé Cheerios Honey Cereal 575g",Morrisons,2.50,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Nestlé Cheerios Honey Cereal 575g",Sainsburys,3.25,2.50,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Oreo White Chocolate Covered Cookies 246G",Tesco,2.00,1.50,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Oreo White Chocolate Covered Cookies 246G",Morrisons,2.00,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z
+"Oreo White Chocolate Covered Cookies 246G",Sainsburys,2.00,,,GBP,,,,sample,sample,2025-11-30T12:00:00Z

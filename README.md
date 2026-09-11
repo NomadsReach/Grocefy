@@ -1,106 +1,149 @@
 <div align="center">
   <img src="grocefy_icon.jpeg" alt="Grocefy Logo" width="360"/>
-  <h1>Grocery Price Optimization Agent - System Architecture</h1>
+  <h1>Grocefy</h1>
 </div>
 
-An intelligent multi-agent system that finds the best grocery prices across UK supermarkets using Computer Vision and LLMs.
+Grocefy compares grocery offers using a deterministic pricing core. The runtime does not require Gemini, Google ADK, an API key, or an LLM.
 
-## 🎬 Video summary
+## Current capabilities
 
-<video width="600" controls>
-  <source src="Grocefy_video.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+- Currency-aware money handling with `Decimal`
+- USD, GBP, and EUR formatting
+- Exact product/package identity validation
+- Equivalent unit normalization such as `16 oz` = `1 lb` and `1 gal` = `128 fl oz`
+- Separate unit-value ranking for comparable package sizes
+- Explicit user membership eligibility
+- Same-store `stay` recommendations instead of fake store switches
+- Store, postal code, location, source, scope, and timestamp metadata
+- Append-only historical observations
+- Membership-aware historical-low advisories
+- Offline regression tests and GitHub Actions CI
+- Provider interface for future approved retailer integrations
 
+The earlier Gemini/ADK browser-vision prototype has been removed from the supported tree. It remains available in Git history if needed for reference.
 
-> **Note**: If the video doesn't play above, you can [download it here](./Grocefy_video.mp4) or view it directly in the repository.
+## Quick start
 
-## 🚀 Features
+### Requirements
 
-- **Multi-Supermarket Search**: Searches Tesco, Morrisons, Sainsbury's, Aldi, Lidl, and Waitrose.
-- **Vision-Based Price Extraction**: Uses **Gemini 2.0 Flash** and **Playwright** to visually identify products and extract prices from supermarket websites, just like a human would.
-- **Intelligent Matching**:
-    - **Exact Match**: Finds products by name.
-    - **Visual Match**: If text search fails, it compares product images to ensure the correct item is found.
-- **Price Optimization**: Automatically calculates the best deal, factoring in membership prices (Clubcard, Nectar, etc.).
-- **Historical Price Tracking**: Tracks prices over time to identify trends and potential savings.
-- **Cost Tracking**: Monitors API usage and calculates costs per run (Gemini 2.0/2.5 Flash pricing).
-- **Agentic Architecture**: Built with the **ADK (Agent Development Kit)**, featuring a hierarchical team of agents.
-
-## 🏗️ Architecture
-
-The system uses a **Sequential Coordinator Agent** that manages:
-1.  **Parallel Search Agents**: Scours multiple supermarkets simultaneously.
-2.  **Optimization Agent**: Analyzes results to find the best value.
-
-For a detailed breakdown of the agent hierarchy and logic, see **[AGENT_ARCHITECTURE.md](AGENT_ARCHITECTURE.md)**.
-
-## 🛠️ Setup
-
-### Prerequisites
 - Python 3.10+
-- A Google Cloud Project with Gemini API access
 
-### Installation
-
-1.  **Clone the repository** and navigate to the project folder.
-
-2.  **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Install Playwright browsers**:
-    ```bash
-    playwright install
-    ```
-
-4.  **Configure Environment**:
-    Create a `.env` file in the root directory:
-    ```env
-    GOOGLE_API_KEY=your_gemini_api_key_here
-    ```
-
-## 🏃‍♂️ Usage
-
-Run the main agent script:
+The core runtime uses only the Python standard library.
 
 ```bash
-# Run from the grocefy directory
 python backend/main.py
 ```
 
-The system will:
-1.  Load the shopping list from `backend/data/products.csv`.
-2.  Dispatch Vision Agents to search for each product.
-3.  Display real-time progress of searches and navigations.
-4.  Generate a **Savings Report** showing the best prices and total potential savings.
-5.  Save results to `backend/results/optimization_results.csv`.
-6.  Generate a detailed **Markdown Report** at `backend/results/OPTIMIZATION_REPORT.md`.
-7.  Update historical price data in `backend/data/history/`.
+The checked-in sample uses:
 
-## 📂 Project Structure
+- `backend/data/products.csv` for the shopping list
+- `backend/data/offers.csv` for explicitly labeled sample offers
 
-- **`backend/`**:
-    - **`agent/`**: Agent definitions (Coordinator, Vision, Optimization).
-    - **`tools/`**: Tools for the agents (Vision Price Fetcher).
-    - **`services/`**: Core services (Memory Service).
-    - **`utils/`**: Utility modules (CSV handling, Image storage, History tracking).
-    - **`data/`**:
-        - `products.csv`: Your shopping list.
-        - `history/`: CSV files tracking price history per supermarket.
-        - `product_images/`: Reference images for visual matching.
-    - **`results/`**:
-        - `optimization_results.csv`: The latest run results.
-        - `OPTIMIZATION_REPORT.md`: Detailed markdown report.
-    - `config.py`: Central configuration (Models, Rate Limits, Paths).
-    - `main.py`: Application entry point.
-- **`docs/`**: Documentation and diagrams.
+Generated output is written to:
 
-## 🔮 Future Enhancements
+- `backend/results/optimization_results.csv`
+- `backend/results/OPTIMIZATION_REPORT.md`
+- `backend/data/history/observations.csv`
 
-- **Receipt Scanning**: Upload a photo of your receipt to auto-populate your shopping list.
-- **Auto-Purchasing**: Integration with supermarket APIs to add items to your cart.
-- **Price History Chatbot**: Ask questions like "When is Coke cheapest?"
+Generated result/history files are ignored by Git.
 
-See [AGENT_ARCHITECTURE.md](AGENT_ARCHITECTURE.md#5-future-enhancements) for more details.
+To use another structured offer file:
+
+```bash
+GROCEFY_OFFERS_CSV=/path/to/offers.csv python backend/main.py
+```
+
+## Product input
+
+`backend/data/products.csv` uses this base shape:
+
+```csv
+product_name,current_regular_price,current_membership_price,current_supermarket,currency
+Milk 1 gal,4.50,,Target,USD
+```
+
+`product_name` is required and cannot be blank. Current regular/member prices are optional, but when present they must be finite positive amounts in the declared currency.
+
+Optional product fields supported by the optimizer include:
+
+- `eligible_memberships`
+- `current_unit_price`
+- `current_store_id`
+- `current_postal_code`
+- `current_location`
+- `current_price_source`
+- `current_price_scope`
+- `current_captured_at`
+
+`eligible_memberships` may be a comma- or semicolon-separated retailer list. Membership eligibility is user context and is defined only here. Offer rows cannot grant membership eligibility.
+
+## Offer input
+
+A structured offer file can use this shape:
+
+```csv
+product_name,retailer,regular_price,membership_price,unit_price,currency,store_id,postal_code,location,price_source,price_scope,captured_at
+Milk 1 gal,Walmart,$3.75,,$0.029/fl oz,USD,W1,32780,"Titusville, FL",manual,store,2026-09-11T14:00:00-04:00
+```
+
+Required offer columns are:
+
+- `product_name`
+- `retailer`
+- `price_source`
+
+`price_source` must also be nonblank. The CSV file itself is only a storage format; using `csv` as a source label does not make a price trusted or exempt it from live-price validation.
+
+For an exact-package offer, at least one of `regular_price` or `membership_price` must be present. Package prices and unit prices must be finite and positive.
+
+Live prices must include a valid timezone-aware `captured_at`. Location-sensitive live prices must also include a store ID, postal code, or location unless the provider explicitly declares `price_scope=national`.
+
+Explicit non-live sources such as `sample`, `manual`, `fixture`, and `test` may omit a geographic locator. They remain labeled by source and are never presented as automatically verified live retailer prices.
+
+If duplicate offers exist for the same product/store/source/scope context, the uniquely newest valid timestamp wins. Ambiguous duplicates without usable timestamps fail closed.
+
+## Exact package vs unit value
+
+The primary recommendation only compares exact package identity. Different package sizes cannot win that recommendation.
+
+Comparable sizes may appear in the separate **Comparable Package Unit Value** report section when a normalized unit price is available. For example, a 64 fl oz container may have a lower price per fl oz than a 1 gal container, but it will never be presented as the cheaper exact 1 gal package.
+
+## Historical advisories
+
+Every scan appends timestamped price observations. Before current observations are appended, Grocefy checks prior history for a lower eligible price in the same currency.
+
+Member-only historical prices are ignored unless that retailer is listed in `eligible_memberships`.
+
+## Architecture
+
+```text
+backend/
+  providers/
+    base.py
+    csv_file.py
+    fixture.py
+  services/
+    memory_service.py
+    optimizer.py
+    pipeline.py
+    value_comparison.py
+  utils/
+    csv_handler.py
+    history_tracker.py
+    money.py
+    product_identity.py
+    unit_price.py
+  main.py
+```
+
+The optimization core consumes structured provider output and does not depend on how an offer was collected. No live retailer provider is included yet; future approved integrations should implement the provider contract without changing optimization logic.
+
+## Testing
+
+```bash
+PYTHONPATH=backend python -m unittest discover -s tests -v
+python -m compileall backend tests
+python backend/main.py
+```
+
+GitHub Actions runs the same tests, full compile, offline CLI smoke run, and a clean tracked-worktree assertion.
