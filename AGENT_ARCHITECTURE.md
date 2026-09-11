@@ -1,176 +1,151 @@
-<div align="center">
-  <img src="grocefy_icon.jpeg" alt="Grocefy Logo" width="360"/>
-  <h1>Grocery Price Optimization Agent - System Architecture</h1>
-</div>
+# Grocefy Architecture
 
-This document provides a comprehensive overview of the agentic system designed to find the best grocery prices across multiple supermarkets.
+Grocefy uses a deterministic provider pipeline. The earlier Gemini/Google ADK prototype has been removed from the supported tree and is available only through Git history.
 
-## 1. 🏗️ High-Level Architecture 
+## Runtime flow
 
-The system is built using the **ADK (Agent Development Kit)**. It uses a hierarchical agent structure to process products efficiently.
-
-
-### 📊 Agent Hierarchy Diagram 
-
-![Agent Hierarchy Diagram](docs/images/agent_hierarchy.png)
-
-*Figure 1: The hierarchical structure showing the Coordinator as a Sequential Agent with two steps: (1) Parallel Search, then (2) Optimization.*
-
-### Key Components
-1.  **Coordinator (`SequentialAgent`)**: Orchestrates the flow for a single product. It ensures searching happens *before* optimization.
-2.  **ParallelSearch (`ParallelAgent`)**: Runs multiple `VisionAgents` simultaneously to fetch prices from different supermarkets at the same time.
-3.  **VisionAgent**: A specialized worker that navigates a specific supermarket website to find a specific product.
-4.  **OptimizationAgent**: Analyzes the collected prices to calculate savings and recommend switches.
-
----
-
-## 2. 🔍 Product Discovery Workflow 
-
-The system follows a rigorous process to ensure it finds the *correct* product, not just a keyword match.
-
-### The "Truth" Source
-Before searching, the system needs a ground truth.
-1.  **Input**: `products.csv` defines the user's current basket.
-2.  **Reference Image**: The system captures a "Reference Image" of the product from the user's current supermarket. This serves as the visual template for matching.
-
-### Search Logic: The Two-Stage Process
-
-The `VisionAgent` uses a robust two-stage fallback mechanism to find products.
-
-![Search Logic Diagram](docs/images/search_logic.png)
-
-*Figure 2: The two-stage search process with visual fallback.*
-
-#### Stage 1: Text-Based Verification
-- **Query**: Uses the exact full product name (e.g., "Coca Cola Regular 24 X 330 Ml Pack").
-- **Verification**: An LLM analyzes the text results to ensure the Brand, Product Type, and Quantity match exactly.
-
-#### Stage 2: Visual Fallback (The "Smart" Search)
-If the exact name doesn't work (e.g., different naming conventions), the system:
-1.  **Simplifies the Query**: Removes specific details to get broader results (e.g., "Coca Cola").
-2.  **Visual Matching**:
-    - Uses Gemini Vision to **crop** individual products from the search results screenshot.
-    - **Compares** these crops against the **Reference Image**.
-    - If the packaging looks the same, it's a match!
-
----
-
-## 3. ⏳ Quota Management & Rate Limiting 
-
-To handle API quota limits (e.g., Gemini Free Tier), the system implements configurable rate limiting.
-
-### ⏱️ Batch Processing
-Instead of launching agents for **ALL** products at once, `main.py` processes them in batches.
-
-**Configuration** (`config.py`):
-- **`ENABLE_BATCH_PROCESSING`**: Master flag to enable/disable batch processing
-- **`BATCH_SIZE`**: Number of products to process per batch (e.g., `1` = process 1 product across all supermarkets before moving to next product)
-- **`BATCH_DELAY_SECONDS`**: Delay in seconds between batches (e.g., `60` = wait 60 seconds before starting next batch)
-
-**Example**: With `BATCH_SIZE=1` and 6 supermarkets, each batch processes 1 product × 6 supermarkets = 6 parallel agents.
-
-```mermaid
-sequenceDiagram
-    participant Main
-    participant Batch1 as "Batch 1 (Product A)"
-    participant Batch2 as "Batch 2 (Product B)"
-    Note over Main: Config: BATCH_SIZE=1
-    Main->>Batch1: Start Processing
-    activate Batch1
-    Batch1-->>Main: Complete
-    deactivate Batch1
-    Note over Main: Wait BATCH_DELAY_SECONDS (e.g., 60s)
-    Main->>Batch2: Start Processing
-    activate Batch2
-    Batch2-->>Main: Complete
-    deactivate Batch2
+```text
+products.csv
+    |
+    v
+PriceProvider
+    |
+    v
+Exact product/package validation
+    |
+    v
+Structured offers
+    |
+    +--------------------+
+    |                    |
+    v                    v
+Exact optimizer     Unit-value ranking
+    |                    |
+    +----------+---------+
+               |
+               v
+        report + results
+               |
+               v
+      append-only history
 ```
 
-### Vision API Rate Limiting
-Inside each `VisionAgent`, there is a semaphore to limit concurrent API calls across the entire application.
+## Provider boundary
 
-- **`VISION_MAX_CONCURRENT_CALLS`**: Controls how many agents can talk to Gemini Vision at the exact same instant.
-- **`VISION_CALL_DELAY_SECONDS`**: Adds a "breathing room" delay between calls.
+All price acquisition is isolated behind `backend/providers/base.py`.
 
----
+A provider receives retailer and location context and returns structured offers. The optimizer does not depend on whether those offers came from a local CSV, a fixture, or a future approved retailer integration.
 
-## 4. 📈 Optimization & History 
+Current providers:
 
-### Optimization Logic
-The `OptimizationAgent` compares the found prices against the user's current price.
-- **Price Preference**: Configurable via `USE_MEMBERSHIP_PRICE_FOR_CURRENT`.
-    - If `True`: Compares against your current *Membership* price (if you have one).
-    - If `False`: Compares against your current *Regular* price.
-- **Savings Calculation**: `max(0, current_price - found_price)`.
+- `CsvFileProvider` for structured local offer data
+- `FixtureProvider` for tests
 
-### History Tracking
-Data is persisted to CSV files for long-term tracking.
-- **Location**: `backend/data/history/`
-- **Format**: One file per supermarket (e.g., `history_Tesco.csv`).
-- **Structure**:
-  - Rows: Products (split by Price Type: Regular/Membership).
-  - Columns: Dates.
+No live retailer provider is included yet.
 
-```csv
-Product,2025-11-27,2025-11-28
-Coca Cola - Regular,1.50,1.50
-Coca Cola - Membership,1.20,1.20
+## Offer integrity
+
+Before an offer reaches the exact optimizer:
+
+1. Product/package identity must match exactly.
+2. Equivalent unit descriptions are normalized, such as `16 oz` and `1 lb`.
+3. Different package sizes or counts cannot silently become exact matches.
+4. `price_source` is mandatory and cannot be blank.
+5. Live prices require a valid timezone-aware capture timestamp.
+6. Location-sensitive live prices require store, postal, or location scope unless explicitly national.
+7. Currency symbols must agree with the declared currency.
+8. Package and unit prices must be finite and positive.
+9. Duplicate offers for the same context resolve to the uniquely newest timestamp; ambiguous duplicates fail closed.
+10. Source, scope, timestamp, store, postal code, and location remain attached to the offer.
+
+The CSV file is a storage format, not a trust source. A `price_source` value of `csv` does not bypass live-price validation.
+
+## Exact package recommendations
+
+`backend/services/optimizer.py` computes the primary recommendation using exact packages only.
+
+Business rules include:
+
+- `Decimal` money arithmetic
+- explicit user membership eligibility
+- member pricing excluded when the user is not eligible
+- same-retailer recommendations labeled `stay` rather than fake switches
+- structured metadata retained to output
+
+Membership eligibility is supplied by the shopping list (`eligible_memberships`). Offer rows cannot grant membership eligibility.
+
+## Comparable package unit value
+
+`backend/services/value_comparison.py` is deliberately separate from exact optimization.
+
+Comparable products must have the same normalized product identity, including variant/dietary text. Different package sizes are allowed only in this mode and only when unit prices normalize to the same dimension and currency.
+
+The result is advisory unit value, not an exact-package price recommendation.
+
+## Money and units
+
+`backend/utils/money.py` owns money parsing and formatting.
+
+`backend/utils/unit_price.py` normalizes common unit-price bases, including:
+
+- oz / lb / g / kg
+- fl oz / gal / qt / pt / ml / l
+- count
+
+`backend/utils/product_identity.py` owns product/package identity and physical-unit normalization.
+
+## History
+
+`backend/utils/history_tracker.py` appends observations to `observations.csv`.
+
+Each observation can retain:
+
+- timestamp
+- product
+- retailer
+- regular or membership price
+- currency
+- unit price
+- store ID
+- postal code
+- location
+- price source
+- price scope
+
+Multiple observations on the same day are retained.
+
+`HistoryCSVMemoryService` performs literal product lookup and structured historical-low selection.
+
+Historical advisories are generated before new observations are appended. Member-only historical prices are ignored unless the membership is configured as eligible, and historical prices from another currency are never compared.
+
+## Entry point
+
+`backend/main.py` is a deterministic CLI. It does not import an AI SDK.
+
+Default input:
+
+- `backend/data/products.csv`
+- `backend/data/offers.csv`
+
+Generated output:
+
+- `backend/results/optimization_results.csv`
+- `backend/results/OPTIMIZATION_REPORT.md`
+- `backend/data/history/observations.csv`
+
+Generated output is ignored by Git.
+
+## Required verification
+
+```bash
+PYTHONPATH=backend python -m unittest discover -s tests -v
+python -m compileall backend tests
+python backend/main.py
+git diff --exit-code
 ```
 
----
+GitHub Actions executes the same required gate.
 
-## 5. 🧠 Memory System (Actionable Intelligence) 
+## Future integrations
 
-The system leverages the historical price data (`backend/data/history/*.csv`) as its long-term memory. This ensures a **Single Source of Truth** for all price intelligence.
-
-### The Intelligence Loop
-
-1.  **Automatic Storage**:
-    The `HistoricalPriceTracker` automatically logs every price found during a run into the supermarket-specific CSV files. No separate "memory" write step is needed.
-
-2.  **Contextual Retrieval**:
-    During a run, the `OptimizationAgent` uses the `load_memory` tool to scan these CSV files. It extracts the **all-time lowest price** for the product being analyzed.
-
-3.  **Active Comparison**:
-    -   **"Is this a good deal?"**: The agent compares the *current* best price against the *historical low* from the CSVs.
-    -   **Warning Generation**: If the current price is higher than the historical low, it generates a warning: *"⚠️ Cheaper in past: £1.50 at Tesco (2025-11-20)"*.
-
-### Why this matters?
-This transforms the agent from a simple "price checker" into a **"Strategic Advisor"**. It helps you avoid buying items when they are temporarily expensive, even if they are the cheapest option *right now*.
-
----
-
-## 6. 🚀 Future Enhancements 
-
-The system is designed to be extensible. Here are planned enhancements to make it even more powerful:
-
-### 📸 Receipt & Grocery Photo Input
-Instead of manually maintaining `products.csv`, the system will be able to:
-- **Scan Grocery Receipts**: Upload a photo of your receipt, and the system will automatically extract all products and prices using OCR and Vision AI.
-- **Identify Products from Photos**: Take a photo of your groceries, and the system will identify each product and add it to your basket.
-
-This will eliminate manual data entry and make the system truly hands-free.
-
-### 🛒 Automated Online Purchasing
-Once the system identifies the best deals, it can:
-- **Auto-Purchase**: Integrate with supermarket APIs (where available) to automatically add products to your online cart or complete purchases.
-- **Order Tracking**: Monitor your orders and update price history based on actual purchases.
-
-This closes the loop from discovery to purchase, making savings effortless.
-
-### 💬 Price History Chatbot
-A conversational agent that lets you query historical price data:
-- **Example Queries**:
-  - "What was the price of Coca Cola at Tesco last month?"
-  - "Show me the price trend for Oreo cookies across all supermarkets."
-  - "Which supermarket had the best price for milk in the last 3 months?"
-  
-The chatbot will use the historical CSV data to provide insights and help you make informed decisions.
-
-### Architecture Impact
-These enhancements will introduce new agents:
-- **ReceiptScannerAgent**: Processes receipt/grocery photos to extract products.
-- **PurchaseAgent**: Handles automated ordering from supermarket websites.
-- **HistoryChatAgent**: Provides conversational access to price history data.
-
-All of these will integrate seamlessly with the existing agent hierarchy! 🚀
+New retailer integrations should implement the provider contract rather than modifying optimization logic. A live provider should fail closed when product identity, currency, provenance, timestamp, or geographic scope cannot be established reliably.

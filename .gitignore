@@ -38,7 +38,7 @@ ENV/
 # Logs
 *.log
 
-# Project Specific
-backend/debug/
-backend/data/product_images/product_images_from_rest_supermarkets/
-backend/data/reference_image_generation_results.json
+# Generated Grocefy output
+backend/data/history/observations.csv
+backend/results/*.csv
+backend/results/*.md
